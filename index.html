@@ -56,6 +56,7 @@ button.pri:hover{background:#ffb852}
 #dsel{display:none}
 #dsel button{text-align:left;display:block;width:100%}
 #dsel small{display:block;font-weight:400;opacity:.75;margin-top:2px}
+#dsel .row button{flex:1;width:auto;text-align:center}
 </style>
 </head>
 <body>
@@ -105,6 +106,9 @@ button.pri:hover{background:#ffb852}
   <div class="card" id="dsel">
     <h1>Pick a difficulty</h1>
     <p class="sub">Room <b id="dcode"></b> is open. Friends who join will wait until you start.</p>
+    <div class="sep">Bot teammates</div>
+    <div class="row" id="bots"><button data-n="0" class="pri">None</button><button data-n="1">1</button><button data-n="2">2</button><button data-n="3">3</button></div>
+    <div class="sep">Difficulty</div>
     <button data-d="0">Easy<small>Two minutes to prepare, a tiny first wave, and a slow build-up</small></button>
     <button data-d="1" class="pri">Normal<small>Ninety seconds to prepare, small waves that grow steadily</small></button>
     <button data-d="2">Hard<small>One minute to prepare, bigger waves, tougher and harder-hitting zombies</small></button>
@@ -194,12 +198,13 @@ function spawn(){
 function step(dt){
   const g=G,dm=g.dm;g.tick++;if(g.over)return;
   g.wt-=dt;
-  if(g.wt<=0){g.wave++;g.wt=dm.wi;g.q=rd((dm.b+(g.wave-1)*dm.g)*(1+.35*(Object.keys(g.P).length-1)))}
+  if(g.wt<=0){g.wave++;g.wt=dm.wi;g.q=rd((dm.b+(g.wave-1)*dm.g)*(1+.35*(Object.values(g.P).reduce((a,p)=>a+(p.bot?.5:1),0)-1)))}
   g.sq-=dt;if(g.q>0&&g.sq<=0){g.q--;g.sq=dm.sg*(.7+rnd()*.6);spawn()}
   g.fdt-=dt;if(!g.fd||g.fdt<=0){flow();g.fdt=.7}
   for(const n of g.nodes)if(n.hp<=0&&(n.rt-=dt)<=0)n.hp=5;
   for(const p of Object.values(g.P)){
     if(p.dead){if((p.rt-=dt)<=0){p.dead=0;p.hp=PH;p.x=W/2;p.y=W/2+90}continue}
+    if(p.bot)botAI(p,dt);
     const l=Math.hypot(p.mx,p.my);
     if(l>0){p.x+=p.mx/l*170*dt;p.y+=p.my/l*170*dt}
     collide(p,14,1);p.x=cl(p.x,14,W-14);p.y=cl(p.y,14,W-14);
@@ -240,6 +245,58 @@ function step(dt){
   g.Z=g.Z.filter(z=>{if(z.hp>0)return true;if(!z.bm)g.res.g+=[2,2,6,0,3][z.t];return false});
   if(g.B[0].hp<=0){g.over=1;return}
   g.B=g.B.filter(b=>b.hp>0)}
+
+/* Bot teammates (run on the host): fight nearby zombies, otherwise gather and build defences near the stash */
+const BN=['Rook','Nova','Pip','Bolt'];
+const mkBot=i=>Object.assign(mkP('bot'+i,'Bot '+BN[i-1]),{bot:1,fl:0});
+function botAI(p,dt){
+  const g=G,R=g.res,H=W/2,sd=Math.hypot(p.x-H,p.y-H);
+  const A2=c=>R.w>=c.w&&R.s>=c.s&&R.g>=c.g,A=k=>A2(COST[k]),C=k=>g.B.filter(b=>b.k==k).length;
+  p.bt=(p.bt||0)-dt;p.cool=(p.cool||0)-dt;p.stk=(p.stk||0)-dt;p.ck=(p.ck||0)-dt;
+  if(p.ck<=0){p.ck=1.5;if(p.mv&&Math.hypot(p.x-(p.lx||0),p.y-(p.ly||0))<12){p.stk=.9;p.sa=(rnd()<.5?-1:1)*(1+rnd()*.6)}p.lx=p.x;p.ly=p.y}
+  p.mx=p.my=p.att=p.mv=0;
+  const go=(tx,ty,st)=>{
+    const dx=tx-p.x,dy=ty-p.y,d=Math.hypot(dx,dy);p.a=Math.atan2(dy,dx);
+    if(d>st){let mx=dx/d,my=dy/d;
+      if(p.stk>0){const c=Math.cos(p.sa),sn=Math.sin(p.sa);[mx,my]=[mx*c-my*sn,mx*sn+my*c]}
+      p.mx=mx;p.my=my;p.mv=1}
+    return d};
+  // 1. fight
+  let z=null,zd=240;
+  for(const q of g.Z){const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<zd){zd=d;z=q}}
+  if(z){
+    if(p.hp<PH*.35){go(H,H+90,10);return}
+    p.wp=p.own>>3&1?3:p.own>>1&1?1:0;
+    const w=WP[p.wp],d=go(z.x,z.y,w.rc-10);p.att=d<w.rc+ZT[z.t].r+8?1:0;return}
+  p.wp=0;
+  // 2. build defences
+  let k=0;
+  if(p.cool<=0){
+    if(C(2)<4&&A(2))k=2;
+    else if(C(3)<2&&A(3))k=3;
+    else if(C(9)<1&&C(2)>=3&&g.wave>=2&&A(9))k=9;
+    else if(C(7)<2&&C(2)>=4&&A(7))k=7;
+    else if(C(6)<2&&C(2)>=4&&A(6))k=6;
+    else if(C(2)<8&&A(2))k=2}
+  if(k){
+    if(sd>200){go(H,H+90,150);return}
+    if(p.bt<=0){
+      p.bt=.6;const n0=g.B.length,a=Math.atan2(p.y-H,p.x-H)+(rnd()-.5)*1.6,r=110+rnd()*100;
+      act(p.id,{t:'b',k,x:H+Math.cos(a)*r,y:H+Math.sin(a)*r});
+      if(g.B.length==n0&&++p.fl>5){p.fl=0;p.cool=25}}
+    return}
+  // 3. craft weapons at the forge
+  const fg=g.B.find(b=>b.k==9);
+  if(fg&&C(2)>=4){
+    const nw=[1,3].find(w=>!(p.own>>w&1)&&A2(WP[w].c));
+    if(nw){const d=go(fg.x,fg.y,50);if(d<140)act(p.id,{t:'c',w:nw});return}}
+  // 4. gather what the team is short on
+  const low=R.g<Math.min(R.w,R.s)*.6?2:(R.w<=R.s?0:1);
+  let tn=null,ts=1e9;
+  for(const n of g.nodes)if(n.hp>0){
+    const sc=Math.hypot(n.x-p.x,n.y-p.y)+Math.hypot(n.x-H,n.y-H)*.4+(n.t==low?0:400);
+    if(sc<ts){ts=sc;tn=n}}
+  if(tn){const d=go(tn.x,tn.y,30);p.att=d<48?1:0}else go(H,H+90,120)}
 
 function act(id,m){
   const p=G.P[id];if(!p||p.dead||!m)return;
@@ -296,7 +353,9 @@ function openPeer(){
 function create(){
   isHost=true;myId='host';newGame(1);G.P.host=mkP('host',$('nm').value);
   openPeer();$('main').style.display='none';$('dsel').style.display='flex'}
-document.querySelectorAll('#dsel button').forEach(b=>b.onclick=()=>{newGame(+b.dataset.d);hostLoop();start()});
+let nBots=0;
+document.querySelectorAll('#bots button').forEach(b=>b.onclick=()=>{nBots=+b.dataset.n;document.querySelectorAll('#bots button').forEach(x=>x.className=x==b?'pri':'')});
+document.querySelectorAll('#dsel button[data-d]').forEach(b=>b.onclick=()=>{newGame(+b.dataset.d);for(let i=1;i<=nBots;i++)G.P['bot'+i]=mkBot(i);hostLoop();start()});
 
 function join(){
   const c=$('jc').value.trim().toUpperCase();
