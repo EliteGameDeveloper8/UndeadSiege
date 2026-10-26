@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Undead Siege – co-op zombie defense</title>
+<style>
+:root{--void:#0b120c;--panel:rgba(13,19,15,.86);--line:rgba(255,255,255,.14);--fg:#ecf1e6;--dim:#9aab95;--ember:#f2a53d;--bad:#e0594d}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--void);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+canvas{display:block;width:100%;height:100%;cursor:crosshair}
+.hud{position:fixed;pointer-events:none;z-index:2}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+#res{top:12px;left:12px;display:flex;flex-direction:column;gap:6px}
+#res div{display:flex;align-items:center;gap:8px;min-width:112px}
+#res i{width:12px;height:12px;border-radius:3px;display:inline-block}
+#res b{margin-left:auto;font-variant-numeric:tabular-nums}
+#top{top:12px;left:50%;transform:translateX(-50%);text-align:center;min-width:250px}
+#wv{font:700 20px Palatino,"Palatino Linotype",Georgia,serif}
+#nx{color:var(--dim);font-size:13px}
+#stash{height:6px;border-radius:3px;background:rgba(255,255,255,.12);margin-top:6px;overflow:hidden}
+#hp{height:100%;width:100%;background:var(--ember)}
+#info{top:12px;right:12px;text-align:right;pointer-events:auto;cursor:pointer}
+#info small{color:var(--dim);display:block}
+#code{font:700 18px Palatino,Georgia,serif;letter-spacing:.08em}
+#bar{bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
+.slot{pointer-events:auto;cursor:pointer;min-width:92px;text-align:center;padding:6px 10px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.slot kbd{font:inherit;color:var(--ember);font-weight:700;margin-right:6px}
+.slot small{display:block;color:var(--dim);font-size:11px}
+.slot.sel{border-color:var(--ember);box-shadow:0 0 0 1px var(--ember)}
+.slot.off{opacity:.45}
+#msg{top:42%;left:50%;transform:translateX(-50%);display:none;font:700 22px Palatino,Georgia,serif;text-shadow:0 2px 8px #000}
+.screen{position:fixed;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;padding:16px;background:radial-gradient(ellipse at 50% 30%,#1d2f21,var(--void) 70%)}
+#over{display:none;background:rgba(6,9,7,.82);flex-direction:column;gap:14px;text-align:center}
+#over h2{font:700 34px Palatino,Georgia,serif;margin:0}
+.card{width:min(420px,100%);display:flex;flex-direction:column;gap:12px}
+h1{margin:0;font:700 clamp(38px,9vw,54px)/1 Palatino,"Palatino Linotype",Georgia,serif;letter-spacing:-.01em}
+h1 span{color:var(--ember)}
+.sub{margin:0;color:var(--dim)}
+input{font:inherit;color:var(--fg);background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:8px;padding:11px 12px;width:100%;user-select:text;-webkit-user-select:text}
+input:focus-visible,button:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
+button{font:600 15px system-ui,sans-serif;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.09);color:var(--fg);padding:11px 18px}
+button:hover{background:rgba(255,255,255,.16)}
+button.pri{background:var(--ember);border-color:var(--ember);color:#1a1205}
+button.pri:hover{background:#ffb852}
+.row{display:flex;gap:8px}
+.sep{color:var(--dim);text-align:center;font-size:13px}
+#note{min-height:20px;color:var(--bad)}
+.how{margin:0;padding:0;list-style:none;color:var(--dim);font-size:13px;display:grid;gap:2px}
+.how b{color:var(--fg)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="res" class="hud box">
+  <div><i style="background:#8a5a2b"></i>Wood<b id="r1">0</b></div>
+  <div><i style="background:#9aa3ab"></i>Stone<b id="r2">0</b></div>
+  <div><i style="background:#f2c94c"></i>Gold<b id="r3">0</b></div>
+</div>
+<div id="top" class="hud box">
+  <div id="wv">Prepare your base</div>
+  <div id="nx"></div>
+  <div id="stash"><div id="hp"></div></div>
+</div>
+<div id="info" class="hud box" title="Copy invite link">
+  <small>Room code · click to copy invite</small>
+  <div id="code">–</div>
+  <small id="pc">1 player</small>
+</div>
+<div id="bar" class="hud"></div>
+<div id="msg" class="hud">You fell. Respawning at the stash…</div>
+
+<div id="over" class="screen">
+  <h2>Stash destroyed</h2>
+  <div id="ot" class="sub"></div>
+  <button id="again" class="pri">Restart game</button>
+</div>
+
+<div id="menu" class="screen">
+  <div class="card">
+    <h1>Undead<span>Siege</span></h1>
+    <p class="sub">Harvest wood, stone and gold, wall in the golden stash, and hold out against the waves with your friends.</p>
+    <input id="nm" maxlength="14" placeholder="Your name" autocomplete="off">
+    <button id="cr" class="pri">Create game</button>
+    <div class="sep">or join a friend’s game</div>
+    <div class="row"><input id="jc" maxlength="5" placeholder="Room code" autocomplete="off"><button id="jn">Join</button></div>
+    <div id="note"></div>
+    <ul class="how">
+      <li><b>WASD</b> move · <b>mouse</b> aim · <b>hold click</b> harvest and fight</li>
+      <li><b>1 2 3</b> pick a building, <b>click</b> to place, <b>Q</b> back to tool</li>
+      <li><b>Right-click</b> sells a building for half its cost</li>
+      <li>Resources are shared by the whole team. The host should keep this tab open and visible.</li>
+    </ul>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+/* ===== Undead Siege =====
+   The host's browser runs the simulation (30 ticks/s) and streams snapshots to
+   everyone else over WebRTC (PeerJS). No game server needed – works on GitHub Pages. */
+const $=i=>document.getElementById(i),cv=$('c'),ctx=cv.getContext('2d');
+const W=2400,SZ=[80,40,40,40],BHP=[1500,300,200,150],LIM=[0,999,12,6];
+const COST=[0,{w:5,s:0,g:0},{w:15,s:15,g:20},{w:20,s:10,g:0}],NAMES=['Tool','Wall','Tower','Gold mine'];
+const cl=(v,a,b)=>v<a?a:v>b?b:v,rd=Math.round,rnd=Math.random;
+let G,view=null,myId='',isHost=false,peer=null,srv=null,conns=[],code='',sel=0,started=false,gone=false,frame=0,lastCell=-1;
+const cam={x:W/2,y:W/2},keys={},mouse={x:0,y:0,down:false},sm=new Map(),NODES=makeNodes();
+const wx=()=>mouse.x-innerWidth/2+cam.x,wy=()=>mouse.y-innerHeight/2+cam.y;
+
+/* ---------- world ---------- */
+function makeNodes(){ // same seed everywhere, so clients only need hp values
+  let s=1337;const r=()=>(s=(s*1664525+1013904223)>>>0)/4294967296,n=[];
+  for(let i=0;i<110;i++){const x=150+r()*(W-300),y=150+r()*(W-300),q=r(),t=q<.5?0:q<.85?1:2;
+    if(Math.hypot(x-W/2,y-W/2)>230)n.push({t,x,y,hp:5,rt:0})}
+  return n}
+const mkP=(id,name)=>({id,name:(name||'Survivor').slice(0,14),x:W/2,y:W/2+90,hp:100,dead:0,rt:0,mx:0,my:0,a:0,att:0,cd:0,sw:0});
+function newGame(){
+  const P=G?G.P:{};
+  G={tick:0,wave:0,wt:20,q:0,sq:0,res:{w:80,s:40,g:30},nodes:makeNodes(),B:[{id:1,k:0,x:W/2,y:W/2,hp:BHP[0]}],Z:[],P,fx:[],id:2,over:0};
+  for(const p of Object.values(P)){p.hp=100;p.dead=0;p.x=W/2;p.y=W/2+90}}
+
+function collide(e,r){ // push circle e out of every building; returns last building touched
+  let hit=null;
+  for(const b of G.B){const h=SZ[b.k]/2,cx=cl(e.x,b.x-h,b.x+h),cy=cl(e.y,b.y-h,b.y+h),dx=e.x-cx,dy=e.y-cy,d=Math.hypot(dx,dy);
+    if(d<r){if(d>.001){e.x+=dx/d*(r-d);e.y+=dy/d*(r-d)}else e.x+=r;hit=b}}
+  return hit}
+
+function swing(p){
+  const hx=p.x+Math.cos(p.a)*38,hy=p.y+Math.sin(p.a)*38,R=G.res;
+  for(const n of G.nodes)if(n.hp>0&&Math.hypot(n.x-hx,n.y-hy)<40){
+    n.hp--;if(n.hp<=0)n.rt=25;R[['w','s','g'][n.t]]+=n.t==2?2:3}
+  for(const z of G.Z)if(Math.hypot(z.x-hx,z.y-hy)<(z.t==2?46:36))z.hp-=20}
+
+function spawn(){
+  const w=G.wave,q=rnd(),t=w>=5&&q<.15?2:w>=3&&q<.4?1:0,s=rd(rnd()*3),u=30+rnd()*(W-60);
+  const hp0=36+w*6,hp=t==2?hp0*4:t==1?hp0*.6:hp0;
+  G.Z.push({id:G.id++,x:s<2?u:(s==2?30:W-30),y:s<2?(s==0?30:W-30):u,hp,mh:hp,t,sp:t==2?50:t==1?115:65+rnd()*20,cd:0})}
+
+function step(dt){
+  const g=G;g.tick++;if(g.over)return;
+  g.wt-=dt;
+  if(g.wt<=0){g.wave++;g.wt=30;g.q=rd((4+g.wave*3)*(1+.4*(Object.keys(g.P).length-1)))}
+  g.sq-=dt;if(g.q>0&&g.sq<=0){g.q--;g.sq=.45;spawn()}
+  for(const n of g.nodes)if(n.hp<=0&&(n.rt-=dt)<=0)n.hp=5;
+  for(const p of Object.values(g.P)){
+    if(p.dead){if((p.rt-=dt)<=0){p.dead=0;p.hp=100;p.x=W/2;p.y=W/2+90}continue}
+    const l=Math.hypot(p.mx,p.my);
+    if(l>0){p.x+=p.mx/l*170*dt;p.y+=p.my/l*170*dt}
+    collide(p,14);p.x=cl(p.x,14,W-14);p.y=cl(p.y,14,W-14);
+    p.hp=Math.min(100,p.hp+2*dt);p.cd-=dt;p.sw=Math.max(0,p.sw-dt);
+    if(p.att&&p.cd<=0){p.cd=.4;p.sw=.2;swing(p)}}
+  const alive=Object.values(g.P).filter(p=>!p.dead);
+  for(const z of g.Z){
+    let t=g.B[0],td=Infinity;
+    for(const p of alive){const d=Math.hypot(p.x-z.x,p.y-z.y);if(d<200&&d<td){t=p;td=d}}
+    const dx=t.x-z.x,dy=t.y-z.y,d=Math.hypot(dx,dy)||1,r=z.t==2?22:z.t==1?11:14;
+    if(d>20){z.x+=dx/d*z.sp*dt;z.y+=dy/d*z.sp*dt}
+    const hit=collide(z,r);z.cd-=dt;
+    if(z.cd<=0){
+      if(t!==g.B[0]&&d<r+18&&!t.dead){t.hp-=10+g.wave;z.cd=.8;if(t.hp<=0){t.dead=1;t.rt=6}}
+      else if(hit){hit.hp-=(8+g.wave*1.5)*(z.t==2?2:1);z.cd=.8}}}
+  for(const b of g.B){
+    if(b.k==3){b.cd=(b.cd||0)-dt;if(b.cd<=0){b.cd=2;g.res.g+=2}}
+    else if(b.k==2){
+      b.cd=(b.cd||0)-dt;
+      if(b.cd<=0){let tz=null,td=280;
+        for(const z of g.Z){const d=Math.hypot(z.x-b.x,z.y-b.y);if(d<td){td=d;tz=z}}
+        if(tz){b.cd=.7;tz.hp-=14;g.fx.push([rd(b.x),rd(b.y),rd(tz.x),rd(tz.y)])}}}}
+  g.Z=g.Z.filter(z=>{if(z.hp>0)return true;g.res.g+=z.t==2?5:2;return false});
+  if(g.B[0].hp<=0){g.over=1;return}
+  g.B=g.B.filter(b=>b.hp>0)}
+
+function act(id,m){ // handles input from any player (host calls it directly for itself)
+  const p=G.P[id];if(!p||p.dead||!m)return;
+  if(m.t=='i'){p.mx=cl(+m.mx||0,-1,1);p.my=cl(+m.my||0,-1,1);p.a=+m.a||0;p.att=m.att?1:0}
+  else if(m.t=='b'){
+    const k=m.k|0,c=COST[k];if(!c)return;
+    const x=Math.floor(+m.x/40)*40+20,y=Math.floor(+m.y/40)*40+20,R=G.res;
+    if(!(x>0&&x<W&&y>0&&y<W)||Math.hypot(x-p.x,y-p.y)>320)return;
+    if(R.w<c.w||R.s<c.s||R.g<c.g||G.B.filter(b=>b.k==k).length>=LIM[k])return;
+    if(G.B.some(b=>Math.abs(b.x-x)<(SZ[b.k]+40)/2&&Math.abs(b.y-y)<(SZ[b.k]+40)/2))return;
+    R.w-=c.w;R.s-=c.s;R.g-=c.g;G.B.push({id:G.id++,k,x,y,hp:BHP[k],cd:0})}
+  else if(m.t=='s'){
+    const x=+m.x,y=+m.y;if(Math.hypot(x-p.x,y-p.y)>320)return;
+    const i=G.B.findIndex(b=>b.k&&Math.abs(b.x-x)<SZ[b.k]/2&&Math.abs(b.y-y)<SZ[b.k]/2);
+    if(i>=0){const c=COST[G.B[i].k];G.res.w+=c.w>>1;G.res.s+=c.s>>1;G.res.g+=c.g>>1;G.B.splice(i,1)}}}
+
+function snap(){
+  const g=G;
+  return{w:g.wave,wt:Math.max(0,Math.ceil(g.wt)),q:g.q+g.Z.length,r:g.res,o:g.over,
+    p:Object.values(g.P).map(p=>[p.id,rd(p.x),rd(p.y),rd(p.a*100)/100,rd(p.hp),p.dead,p.name,p.sw>0?1:0]),
+    z:g.Z.map(z=>[z.id,rd(z.x),rd(z.y),rd(z.hp/z.mh*100),z.t]),
+    b:g.B.map(b=>[b.id,b.k,b.x,b.y,rd(b.hp/BHP[b.k]*100)]),
+    n:g.nodes.map(n=>n.hp),f:g.fx}}
+
+function hostLoop(){
+  let last=performance.now();
+  setInterval(()=>{
+    const now=performance.now(),dt=Math.min(.1,(now-last)/1000);last=now;
+    step(dt);view=snap();
+    if(G.tick%2==0){for(const c of conns)if(c.open)c.send(view);G.fx=[]}
+  },33)}
+
+/* ---------- networking ---------- */
+const note=t=>$('note').textContent=t;
+function openPeer(){
+  if(typeof Peer==='undefined'){note('');return}
+  if(peer)peer.destroy();
+  code=Math.random().toString(36).slice(2,7).toUpperCase();$('code').textContent=code;
+  peer=new Peer('zio-'+code);
+  peer.on('error',e=>{if(e.type=='unavailable-id')return openPeer();$('code').textContent='offline'});
+  peer.on('connection',c=>{
+    c.on('open',()=>conns.push(c));
+    c.on('data',m=>{if(m&&m.t=='hi'){G.P[c.peer]=mkP(c.peer,String(m.name));c.send({t:'w',id:c.peer})}else act(c.peer,m)});
+    c.on('close',()=>{delete G.P[c.peer];conns=conns.filter(x=>x!==c)})})}
+
+function create(){
+  isHost=true;myId='host';newGame();G.P.host=mkP('host',$('nm').value);
+  hostLoop();start();openPeer()}
+
+function join(){
+  const c=$('jc').value.trim().toUpperCase();
+  if(!c)return note('Enter the room code your friend shared.');
+  if(typeof Peer==='undefined')return note('Could not load the multiplayer library. Check your connection.');
+  note('');$('jn').disabled=true;
+  peer=new Peer();
+  peer.on('error',e=>{$('jn').disabled=false;note(e.type=='peer-unavailable'?'Room not found. Check the code.':'Connection error ('+e.type+').')});
+  peer.on('open',()=>{
+    srv=peer.connect('zio-'+c,{reliable:true});
+    srv.on('open',()=>{code=c;$('code').textContent=c;srv.send({t:'hi',name:$('nm').value});start()});
+    srv.on('data',m=>{if(m.t=='w')myId=m.id;else view=m});
+    srv.on('close',()=>bye('Disconnected from the host.'))})}
+
+function bye(t){gone=true;view=null;$('ot').textContent=t;$('over').style.display='flex';$('again').style.display='none'}
+const send=m=>{if(isHost)act(myId,m);else if(srv&&srv.open)srv.send(m)};
+
+/* ---------- input ---------- */
+const cell=(x,y)=>Math.floor(x/40)*100000+Math.floor(y/40);
+function start(){
+  if(started)return;started=true;$('menu').style.display='none';
+  setInterval(()=>{
+    if(!view)return;
+    const k=keys,mx=(k.d||k.arrowright?1:0)-(k.a||k.arrowleft?1:0),my=(k.s||k.arrowdown?1:0)-(k.w||k.arrowup?1:0);
+    send({t:'i',mx,my,a:Math.atan2(mouse.y-innerHeight/2,mouse.x-innerWidth/2),att:mouse.down&&sel==0});
+    if(mouse.down&&sel>0){const c=cell(wx(),wy());if(c!==lastCell){lastCell=c;send({t:'b',k:sel,x:wx(),y:wy()})}}
+  },33);
+  draw()}
+addEventListener('keydown',e=>{
+  if(!started)return;const k=e.key.toLowerCase();keys[k]=true;
+  if(k>='1'&&k<='3')sel=+k;else if(k=='q'||k=='0'||k=='escape')sel=0;
+  if(k.startsWith('arrow'))e.preventDefault()});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+addEventListener('blur',()=>{for(const k in keys)keys[k]=false;mouse.down=false});
+cv.addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY});
+cv.addEventListener('mousedown',e=>{mouse.x=e.clientX;mouse.y=e.clientY;if(e.button==0)mouse.down=true;else if(e.button==2)send({t:'s',x:wx(),y:wy()})});
+addEventListener('mouseup',()=>{mouse.down=false;lastCell=-1});
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+
+/* ---------- rendering ---------- */
+const circ=(x,y,r,c)=>{ctx.fillStyle=c;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill()};
+const bar=(x,y,r,w)=>{ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(x-w/2,y,w,5);ctx.fillStyle=r>.5?'#6fcf6f':r>.25?'#f2c94c':'#e0594d';ctx.fillRect(x-w/2,y,w*r,5)};
+const col=id=>{let h=0;for(const ch of String(id))h=(h*31+ch.charCodeAt(0))%360;return`hsl(${h} 65% 58%)`};
+const afford=k=>{const c=COST[k],R=view.r;return R.w>=c.w&&R.s>=c.s&&R.g>=c.g};
+
+$('bar').innerHTML=NAMES.map((n,k)=>{const c=COST[k];
+  return`<div class="slot" id="s${k}"><kbd>${k||'Q'}</kbd>${n}<small>${k?[c.w&&c.w+' wood',c.s&&c.s+' stone',c.g&&c.g+' gold'].filter(Boolean).join(' · '):'harvest · fight'}</small></div>`}).join('');
+NAMES.forEach((n,k)=>$('s'+k).onclick=()=>sel=k);
+
+function draw(){
+  requestAnimationFrame(draw);
+  if(!view)return;
+  const vw=innerWidth,vh=innerHeight,dpr=devicePixelRatio||1,f=++frame;
+  if(cv.width!==((vw*dpr)|0)||cv.height!==((vh*dpr)|0)){cv.width=vw*dpr;cv.height=vh*dpr}
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const S=(k,x,y)=>{let s=sm.get(k);if(!s){s={x,y,a:0,f};sm.set(k,s)}
+    if(Math.hypot(x-s.x,y-s.y)>1)s.a=Math.atan2(y-s.y,x-s.x);
+    s.x+=(x-s.x)*.35;s.y+=(y-s.y)*.35;s.f=f;return s};
+  const PL=view.p.map(p=>({p,s:S('p'+p[0],p[1],p[2])})),ZL=view.z.map(z=>({z,s:S('z'+z[0],z[1],z[2])}));
+  if(f%300==0)for(const[k,s]of sm)if(s.f<f-200)sm.delete(k);
+  const mine=PL.find(o=>o.p[0]===myId);
+  if(mine){cam.x=mine.s.x;cam.y=mine.s.y}
+  const vis=(x,y,m=60)=>Math.abs(x-cam.x)<vw/2+m&&Math.abs(y-cam.y)<vh/2+m;
+
+  ctx.fillStyle='#0b120c';ctx.fillRect(0,0,vw,vh);
+  ctx.save();ctx.translate(vw/2-cam.x,vh/2-cam.y);
+  ctx.fillStyle='#35553b';ctx.fillRect(0,0,W,W);
+  const x0=Math.max(0,Math.floor((cam.x-vw/2)/40)*40),x1=Math.min(W,cam.x+vw/2),y0=Math.max(0,Math.floor((cam.y-vh/2)/40)*40),y1=Math.min(W,cam.y+vh/2);
+  ctx.strokeStyle='rgba(0,0,0,.09)';ctx.lineWidth=1;ctx.beginPath();
+  for(let x=x0;x<=x1;x+=40){ctx.moveTo(x,y0);ctx.lineTo(x,y1)}
+  for(let y=y0;y<=y1;y+=40){ctx.moveTo(x0,y);ctx.lineTo(x1,y)}
+  ctx.stroke();
+
+  NODES.forEach((n,i)=>{
+    const hp=view.n[i];if(!(hp>0)||!vis(n.x,n.y))return;const r=20*(.65+.35*hp/5);
+    if(n.t==0){circ(n.x,n.y+4,r,'rgba(0,0,0,.22)');circ(n.x,n.y,r,'#2a6b34');circ(n.x-4,n.y-5,r*.6,'#3f9249')}
+    else if(n.t==1){circ(n.x,n.y,r,'#7e868e');circ(n.x-5,n.y-5,r*.5,'#b2b9c0')}
+    else{circ(n.x,n.y,r,'#b8892a');circ(n.x-5,n.y-5,r*.5,'#f6d35e')}});
+
+  for(const b of view.b){
+    const k=b[1],x=b[2],y=b[3],h=SZ[k]/2;if(!vis(x,y,90))continue;
+    ctx.fillStyle=['#c9a13a','#8a6a43','#6b7580','#9c7f2a'][k];ctx.fillRect(x-h+2,y-h+2,2*h-4,2*h-4);
+    ctx.strokeStyle='rgba(0,0,0,.45)';ctx.lineWidth=3;ctx.strokeRect(x-h+2,y-h+2,2*h-4,2*h-4);
+    if(k==0)circ(x,y,22,'#fff1a8');
+    else if(k==2){circ(x,y,10,'#2b3138');circ(x,y,4,'#f2a53d')}
+    else if(k==3){ctx.fillStyle='#ffe27a';ctx.font='700 18px system-ui';ctx.textAlign='center';ctx.fillText('$',x,y+6)}
+    if(b[4]<100)bar(x,y-h-9,b[4]/100,Math.max(36,h*1.4))}
+
+  for(const{z,s}of ZL){
+    const t=z[4],r=t==2?22:t==1?11:14;if(!vis(s.x,s.y))continue;
+    circ(s.x,s.y,r,t==2?'#4a5d2f':t==1?'#93b44e':'#6b9a4a');
+    for(const o of[-.55,.55])circ(s.x+Math.cos(s.a+o)*r*.55,s.y+Math.sin(s.a+o)*r*.55,2.6,'#c0261b');
+    if(z[3]<100)bar(s.x,s.y-r-9,z[3]/100,26)}
+
+  ctx.strokeStyle='#ffe9a0';ctx.lineWidth=2;ctx.beginPath();
+  for(const e of view.f){ctx.moveTo(e[0],e[1]);ctx.lineTo(e[2],e[3])}
+  ctx.stroke();
+
+  for(const{p,s}of PL){
+    if(p[5]||!vis(s.x,s.y))continue;
+    const a=p[3],L=p[7]?36:26,c=Math.cos(a),n=Math.sin(a);
+    ctx.strokeStyle='#d8dcdf';ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(s.x+c*10,s.y+n*10);ctx.lineTo(s.x+c*L,s.y+n*L);ctx.stroke();
+    circ(s.x,s.y,15,'rgba(0,0,0,.45)');circ(s.x,s.y,13,col(p[0]));
+    ctx.fillStyle='#fff';ctx.font='600 12px system-ui';ctx.textAlign='center';ctx.fillText(p[6],s.x,s.y-26);
+    bar(s.x,s.y-22,p[4]/100,30)}
+
+  if(sel>0&&mine&&!mine.p[5]){
+    const gx=Math.floor(wx()/40)*40+20,gy=Math.floor(wy()/40)*40+20;
+    const ok=afford(sel)&&Math.hypot(gx-mine.s.x,gy-mine.s.y)<320;
+    ctx.globalAlpha=.5;ctx.fillStyle=ok?'#9cff9c':'#ff7a6e';ctx.fillRect(gx-18,gy-18,36,36);ctx.globalAlpha=1}
+  ctx.restore();
+  if(view.z.length){ctx.fillStyle='rgba(20,10,45,.22)';ctx.fillRect(0,0,vw,vh)}
+
+  /* HUD */
+  const R=view.r,np=view.p.length;
+  $('r1').textContent=R.w;$('r2').textContent=R.s;$('r3').textContent=R.g;
+  $('wv').textContent=view.w?'Wave '+view.w:'Prepare your base';
+  $('nx').textContent=(view.w?'Next wave in ':'First wave in ')+view.wt+'s'+(view.q?' · '+view.q+' zombies':'');
+  $('hp').style.width=view.b[0][4]+'%';
+  $('pc').textContent=np+(np>1?' players':' player');
+  $('msg').style.display=mine&&mine.p[5]?'block':'none';
+  for(let k=0;k<4;k++)$('s'+k).className='slot'+(k==sel?' sel':'')+(k&&!afford(k)?' off':'');
+  if(!gone){$('over').style.display=view.o?'flex':'none';
+    if(view.o){$('ot').textContent='You held out until wave '+view.w+'.';$('again').style.display=isHost?'':'none'}}}
+
+/* ---------- menu wiring ---------- */
+$('cr').onclick=create;$('jn').onclick=join;
+$('again').onclick=()=>{if(isHost)newGame()};
+$('jc').addEventListener('keydown',e=>{if(e.key=='Enter')join()});
+$('info').onclick=()=>{const u=location.href.split('#')[0]+'#'+code;
+  if(navigator.clipboard)navigator.clipboard.writeText(u).then(()=>{$('pc').textContent='Invite link copied'},()=>{})};
+if(location.hash.length>1)$('jc').value=location.hash.slice(1,6).toUpperCase();
+$('nm').value=localStorage.getItem('us-name')||'';
+$('nm').addEventListener('input',()=>{try{localStorage.setItem('us-name',$('nm').value)}catch(e){}});
+</script>
+</body>
+</html>
