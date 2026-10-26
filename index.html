@@ -105,9 +105,9 @@ button.pri:hover{background:#ffb852}
   <div class="card" id="dsel">
     <h1>Pick a difficulty</h1>
     <p class="sub">Room <b id="dcode"></b> is open. Friends who join will wait until you start.</p>
-    <button data-d="0">Easy<small>Fewer and weaker zombies, slower waves</small></button>
-    <button data-d="1" class="pri">Normal<small>The intended experience</small></button>
-    <button data-d="2">Hard<small>Bigger, tougher waves that arrive faster</small></button>
+    <button data-d="0">Easy<small>Two minutes to prepare, a tiny first wave, and a slow build-up</small></button>
+    <button data-d="1" class="pri">Normal<small>Ninety seconds to prepare, small waves that grow steadily</small></button>
+    <button data-d="2">Hard<small>One minute to prepare, bigger waves, tougher and harder-hitting zombies</small></button>
   </div>
 </div>
 
@@ -125,7 +125,7 @@ const HB=[0,1,5,4,2,6,7,3,8,9],HN=['Tool','Wall','Stone','Door','Arrow','Cannon'
 const WP=[{n:'Pickaxe',dmg:20,cd:.4,rc:38},{n:'Sword',dmg:34,cd:.35,rc:44,c:c$(20,25,0)},{n:'Spear',dmg:30,cd:.45,rc:66,c:c$(30,30,0)},{n:'Warhammer',dmg:75,cd:.8,rc:46,sp:16,c:c$(40,40,50)}];
 const ZT=[{r:14,hp:1,sp:70,d:1},{r:11,hp:.55,sp:120,d:.7},{r:22,hp:4,sp:50,d:2.2},{r:13,hp:.8,sp:95,d:0},{r:13,hp:.7,sp:60,d:.9}];
 const ZC=[['#5f8f45','#4b7536','#86b568'],['#9aa84a','#7f8c3a','#c3d070'],['#56603a','#8a8f96','#6b7550'],['#a64a3a','#7d3226','#d98b6b'],['#4d8f6a','#2f6b4c','#7fd1a4']];
-const DIFF=[{n:'Easy',hp:.7,q:.7,d:.7,wi:36},{n:'Normal',hp:1,q:1,d:1,wi:30},{n:'Hard',hp:1.45,q:1.4,d:1.3,wi:24}];
+const PH=70,DIFF=[{n:'Easy',hp:1,d:1,pre:120,wi:50,b:2,g:1.5,sg:1.8},{n:'Normal',hp:1,d:1,pre:90,wi:40,b:3,g:2.2,sg:1.3},{n:'Hard',hp:1.2,d:1.2,pre:60,wi:32,b:4,g:3,sg:.9}];
 const FC=['#ffe9a0','#8cf08c','#8fd3ff','#e4f5dc','#ffb347','#ff7043'];
 const cl=(v,a,b)=>v<a?a:v>b?b:v,rd=Math.round,rnd=Math.random;
 let G,view=null,myId='',isHost=false,peer=null,srv=null,conns=[],code='',sel=0,started=false,gone=false,frame=0,lastCell=-1;
@@ -138,11 +138,11 @@ function makeNodes(){ // same seed everywhere, so clients only need hp values
   for(let i=0;i<110;i++){const x=150+r()*(W-300),y=150+r()*(W-300),q=r(),t=q<.5?0:q<.85?1:2;
     if(Math.hypot(x-W/2,y-W/2)>230)n.push({t,x,y,hp:5,rt:0})}
   return n}
-const mkP=(id,name)=>({id,name:(name||'Survivor').slice(0,14),x:W/2,y:W/2+90,hp:100,dead:0,rt:0,mx:0,my:0,a:0,att:0,cd:0,sw:0,wp:0,own:1});
+const mkP=(id,name)=>({id,name:(name||'Survivor').slice(0,14),x:W/2,y:W/2+90,hp:PH,dead:0,rt:0,mx:0,my:0,a:0,att:0,cd:0,sw:0,wp:0,own:1});
 function newGame(df){
   const P=G?G.P:{};df=df??(G?G.df:1);
-  G={df,dm:DIFF[df],tick:0,wave:0,wt:20,q:0,sq:0,res:{w:80,s:40,g:30},nodes:makeNodes(),B:[{id:1,k:0,x:W/2,y:W/2,hp:BHP[0]}],Z:[],P,fx:[],id:2,over:0,fd:null,fdt:0};
-  for(const p of Object.values(P)){p.hp=100;p.dead=0;p.x=W/2;p.y=W/2+90;p.wp=0;p.own=1}}
+  G={df,dm:DIFF[df],tick:0,wave:0,wt:DIFF[df].pre,q:0,sq:0,res:{w:100,s:50,g:30},nodes:makeNodes(),B:[{id:1,k:0,x:W/2,y:W/2,hp:BHP[0]}],Z:[],P,fx:[],id:2,over:0,fd:null,fdt:0};
+  for(const p of Object.values(P)){p.hp=PH;p.dead=0;p.x=W/2;p.y=W/2+90;p.wp=0;p.own=1}}
 
 function collide(e,r,pl){ // pl: players walk through doors
   let hit=null;
@@ -185,7 +185,7 @@ function swing(p){
 
 function spawn(){
   const g=G,w=g.wave,L=[[0,1]];
-  if(w>=2)L.push([1,.6]);if(w>=3)L.push([4,.5]);if(w>=4)L.push([3,.4]);if(w>=5)L.push([2,.3]);
+  if(w>=3)L.push([1,.6]);if(w>=4)L.push([4,.5]);if(w>=5)L.push([3,.4]);if(w>=6)L.push([2,.3]);
   let q=rnd()*L.reduce((a,b)=>a+b[1],0),t=0;
   for(const[k,wt]of L){if((q-=wt)<=0){t=k;break}}
   const sd=rd(rnd()*3),u=30+rnd()*(W-60),hp=(36+w*6)*ZT[t].hp*g.dm.hp;
@@ -194,16 +194,16 @@ function spawn(){
 function step(dt){
   const g=G,dm=g.dm;g.tick++;if(g.over)return;
   g.wt-=dt;
-  if(g.wt<=0){g.wave++;g.wt=dm.wi;g.q=rd((4+g.wave*3)*dm.q*(1+.4*(Object.keys(g.P).length-1)))}
-  g.sq-=dt;if(g.q>0&&g.sq<=0){g.q--;g.sq=.45;spawn()}
+  if(g.wt<=0){g.wave++;g.wt=dm.wi;g.q=rd((dm.b+(g.wave-1)*dm.g)*(1+.35*(Object.keys(g.P).length-1)))}
+  g.sq-=dt;if(g.q>0&&g.sq<=0){g.q--;g.sq=dm.sg*(.7+rnd()*.6);spawn()}
   g.fdt-=dt;if(!g.fd||g.fdt<=0){flow();g.fdt=.7}
   for(const n of g.nodes)if(n.hp<=0&&(n.rt-=dt)<=0)n.hp=5;
   for(const p of Object.values(g.P)){
-    if(p.dead){if((p.rt-=dt)<=0){p.dead=0;p.hp=100;p.x=W/2;p.y=W/2+90}continue}
+    if(p.dead){if((p.rt-=dt)<=0){p.dead=0;p.hp=PH;p.x=W/2;p.y=W/2+90}continue}
     const l=Math.hypot(p.mx,p.my);
     if(l>0){p.x+=p.mx/l*170*dt;p.y+=p.my/l*170*dt}
     collide(p,14,1);p.x=cl(p.x,14,W-14);p.y=cl(p.y,14,W-14);
-    p.hp=Math.min(100,p.hp+2*dt);p.cd-=dt;p.sw=Math.max(0,p.sw-dt);
+    p.hp=Math.min(PH,p.hp+1.2*dt);p.cd-=dt;p.sw=Math.max(0,p.sw-dt);
     if(p.att&&p.cd<=0){p.cd=WP[p.wp].cd;p.sw=.2;swing(p)}}
   const alive=Object.values(g.P).filter(p=>!p.dead);
   for(const z of g.Z){
@@ -438,7 +438,7 @@ function draw(){
     drawTool(s.x,s.y,p[3],p[8],p[7]);
     circ(s.x,s.y,15,'rgba(0,0,0,.45)');circ(s.x,s.y,13,col(p[0]));
     ctx.fillStyle='#fff';ctx.font='600 12px system-ui';ctx.textAlign='center';ctx.fillText(p[6],s.x,s.y-26);
-    bar(s.x,s.y-22,p[4]/100,30)}
+    bar(s.x,s.y-22,p[4]/PH,30)}
 
   if(sel>0&&mine&&!mine.p[5]){
     const gx=Math.floor(wx()/40)*40+20,gy=Math.floor(wy()/40)*40+20;
